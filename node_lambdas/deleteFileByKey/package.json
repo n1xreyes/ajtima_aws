@@ -1,0 +1,20 @@
+{
+  "name": "delete_lambda",
+  "version": "1.0.0",
+  "description": "The lambda function to delete files from S3 by file key",
+  "main": "index.js",
+  "scripts": {},
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/n1xreyes/ajtima_aws.git"
+  },
+  "author": "Angelo Reyes",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/n1xreyes/ajtima_aws/issues"
+  },
+  "homepage": "https://github.com/n1xreyes/ajtima_aws#readme",
+  "dependencies": {
+    "aws-sdk": "^2.1692.0"
+  }
+}

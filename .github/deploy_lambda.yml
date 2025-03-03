@@ -1,0 +1,53 @@
+name: Deploy AWS Lambda Functions
+
+on:
+  push:
+    branches:
+      - main  # Trigger deployment on pushes to the main branch
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Install Dependencies for Node.js Functions
+        run: |
+          for dir in node_lambdas/*; do
+            if [ -d "$dir" ]; then
+              cd "$dir"
+              npm install || echo "Skipping npm install for $dir"
+              cd -
+            fi
+          done
+
+      - name: Install Dependencies for Python Functions
+        run: |
+          for dir in python_lambdas/*; do
+            if [ -d "$dir" ]; then
+              cd "$dir"
+              pip install -r requirements.txt -t . || echo "Skipping pip install for $dir"
+              cd -
+            fi
+          done
+
+      - name: Package and Deploy Each Lambda Function
+        run: |
+          for dir in node_lambdas/* python_lambdas/*; do
+            if [ -d "$dir" ]; then
+              function_name=$(basename "$dir")
+              zip -r "$function_name.zip" "$dir" -x '*.git*'
+              aws lambda update-function-code \
+                --function-name "$function_name" \
+                --zip-file fileb://"$function_name.zip"
+            fi
+          done
