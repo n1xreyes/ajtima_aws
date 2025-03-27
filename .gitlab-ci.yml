@@ -44,15 +44,12 @@ deploy_lambdas:
     - pip install awscli
 
   script:
-    # The AWS CLI will automatically use the AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY,
-    # and AWS_REGION environment variables provided by GitLab CI/CD variables.
-    - echo "AWS Credentials configured via CI/CD variables."
-    - echo "Using AWS Region: $AWS_REGION"
-
-    # Install Dependencies for Node.js Functions
-    # Use find for more robust directory handling
-    - echo "Installing Node.js dependencies..."
-    - |
+    - | # Use a single multi-line block for all script commands
+      echo "AWS Credentials configured via CI/CD variables."
+      echo "Using AWS Region: $AWS_REGION"
+      
+      # Install Dependencies for Node.js Functions
+      echo "Installing Node.js dependencies..."
       find node_lambdas -mindepth 1 -maxdepth 1 -type d -print -exec sh -c '
           echo "Processing Node.js function in $1..."
           cd "$1"
@@ -63,11 +60,9 @@ deploy_lambdas:
           fi
           cd "$CI_PROJECT_DIR" # Go back to project root
         ' sh {} \;
-
-    # Install Dependencies for Python Functions
-    # Use find for more robust directory handling
-    - echo "Installing Python dependencies..."
-    - |
+      
+      # Install Dependencies for Python Functions
+      echo "Installing Python dependencies..."
       find python_lambdas -mindepth 1 -maxdepth 1 -type d -print -exec sh -c '
           echo "Processing Python function in $1..."
           cd "$1"
@@ -79,30 +74,24 @@ deploy_lambdas:
           fi
           cd "$CI_PROJECT_DIR" # Go back to project root
         ' sh {} \;
-
-    # Package and Deploy Each Lambda Function
-    # Use find again to loop through all function directories
-    - echo "Packaging and deploying Lambda functions..."
-    - |
+      
+      # Package and Deploy Each Lambda Function
+      echo "Packaging and deploying Lambda functions..."
       find node_lambdas python_lambdas -mindepth 1 -maxdepth 1 -type d -print -exec sh -c '
           dir="$1"
           function_name=$(basename "$dir")
           zip_file="$CI_PROJECT_DIR/${function_name}.zip" # Store zip in project root
-
+      
           echo "Packaging $function_name from $dir..."
-          # Go into the directory and zip its contents
-          # Using a subshell () avoids needing cd -
           (cd "$dir" && zip -r "$zip_file" . -x "*.git*")
-
+      
           echo "Deploying $function_name to AWS Lambda..."
           aws lambda update-function-code \
             --function-name "$function_name" \
             --zip-file "fileb://$zip_file" \
             --region "$AWS_REGION" || echo "WARNING: Failed to deploy $function_name, continuing..."
-
-          # Optional: Clean up the zip file
+      
           rm "$zip_file"
-
         ' sh {} \;
 
   # Define rules for when this job should run (alternative to top-level workflow)
