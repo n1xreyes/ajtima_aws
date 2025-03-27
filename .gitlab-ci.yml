@@ -1,0 +1,111 @@
+# .gitlab-ci.yml
+
+# Define stages for the pipeline
+stages:
+  - deploy
+
+# Optional: Define overall workflow rules (alternative to job-level rules)
+# This ensures the pipeline only runs on pushes to the main branch
+workflow:
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE == "push"'
+
+# Define the deployment job
+deploy_lambdas:
+  stage: deploy
+  # Use an image that has Python and pip pre-installed.
+  # We'll install Node.js, npm, zip, and aws-cli.
+  image: python:3.9 # You can choose a different Python version or base image
+
+  # Cache downloaded pip packages and node_modules to speed up builds
+  cache:
+    key:
+      files:
+        - node_lambdas/*/package-lock.json # Cache based on lock files
+        - python_lambdas/*/requirements.txt
+    paths:
+      - node_lambdas/*/node_modules/ # Cache installed node modules per function
+      - .pip-cache/ # Cache downloaded pip packages globally
+    policy: pull-push # Push cache on success, pull at start
+
+  variables:
+    # Configure pip cache directory
+    PIP_CACHE_DIR: "$CI_PROJECT_DIR/.pip-cache"
+    # AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION should be configured
+    # as GitLab CI/CD variables (Settings > CI/CD > Variables).
+    # Ensure they are 'Protected' if 'main' is a protected branch, and 'Masked'.
+
+  before_script:
+    # Update package lists and install necessary tools
+    # Using apt-get assumes a Debian/Ubuntu-based image like python:3.9
+    - apt-get update -y
+    - apt-get install -y nodejs npm zip
+    # Install AWS CLI using pip
+    - pip install awscli
+
+  script:
+    # The AWS CLI will automatically use the AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY,
+    # and AWS_REGION environment variables provided by GitLab CI/CD variables.
+    - echo "AWS Credentials configured via CI/CD variables."
+    - echo "Using AWS Region: $AWS_REGION"
+
+    # Install Dependencies for Node.js Functions
+    # Use find for more robust directory handling
+    - echo "Installing Node.js dependencies..."
+    - |
+      find node_lambdas -mindepth 1 -maxdepth 1 -type d -print -exec sh -c '
+          echo "Processing Node.js function in $1..."
+          cd "$1"
+          if [ -f "package.json" ]; then
+            npm install || echo "WARNING: npm install failed for $1, continuing..."
+          else
+            echo "No package.json found in $1, skipping npm install."
+          fi
+          cd "$CI_PROJECT_DIR" # Go back to project root
+        ' sh {} \;
+
+    # Install Dependencies for Python Functions
+    # Use find for more robust directory handling
+    - echo "Installing Python dependencies..."
+    - |
+      find python_lambdas -mindepth 1 -maxdepth 1 -type d -print -exec sh -c '
+          echo "Processing Python function in $1..."
+          cd "$1"
+          if [ -f "requirements.txt" ]; then
+            # Install dependencies *into* the function directory for packaging
+            pip install -r requirements.txt -t . || echo "WARNING: pip install failed for $1, continuing..."
+          else
+            echo "No requirements.txt found in $1, skipping pip install."
+          fi
+          cd "$CI_PROJECT_DIR" # Go back to project root
+        ' sh {} \;
+
+    # Package and Deploy Each Lambda Function
+    # Use find again to loop through all function directories
+    - echo "Packaging and deploying Lambda functions..."
+    - |
+      find node_lambdas python_lambdas -mindepth 1 -maxdepth 1 -type d -print -exec sh -c '
+          dir="$1"
+          function_name=$(basename "$dir")
+          zip_file="$CI_PROJECT_DIR/${function_name}.zip" # Store zip in project root
+
+          echo "Packaging $function_name from $dir..."
+          # Go into the directory and zip its contents
+          # Using a subshell () avoids needing cd -
+          (cd "$dir" && zip -r "$zip_file" . -x "*.git*")
+
+          echo "Deploying $function_name to AWS Lambda..."
+          aws lambda update-function-code \
+            --function-name "$function_name" \
+            --zip-file "fileb://$zip_file" \
+            --region "$AWS_REGION" || echo "WARNING: Failed to deploy $function_name, continuing..."
+
+          # Optional: Clean up the zip file
+          rm "$zip_file"
+
+        ' sh {} \;
+
+  # Define rules for when this job should run (alternative to top-level workflow)
+  # This matches the GitHub Actions 'on: push: branches: - main' trigger
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE == "push"'
